@@ -1,0 +1,182 @@
+###################################ФАЙЛ MAIN.PY 
+
+import asyncio
+import logging
+
+from aiogram import Bot, Dispatcher, F
+from aiogram.filters import Command
+from core.settings.config import bot_token
+from core.handlers.basic import get_start, get_exception
+from core.handlers.start import start_bot, stop_bot
+from core.handlers.random import random_number
+from core.handlers.answer_how import get_answer_how
+from core.handlers.conversion import document_conversion, audio_conversion
+
+
+async def start():
+    logging.basicConfig(level=logging.INFO)
+    bot = Bot(token=bot_token, parse_mode='HTML')
+    dp = Dispatcher()
+
+    dp.startup.register(start_bot)
+    dp.shutdown.register(stop_bot)
+
+    dp.message.register(get_start, Command(commands=['start']))
+    dp.message.register(random_number, F.text.lower() == 'рандомное число')
+    dp.message.register(get_answer_how, F.text.lower() == 'как дела?')
+    dp.message.register(document_conversion, F.document)
+    dp.message.register(audio_conversion, F.audio)
+
+    # exception
+    dp.message.register(get_exception)
+
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await bot.session.close()
+
+
+if __name__ == '__main__':
+    asyncio.run(start())
+
+
+###################################ФАЙЛ ANSWER_HOW.PY
+
+import random
+from aiogram.types import Message
+from core.keyboards.reply import get_reply_keyboard
+
+
+async def get_answer_how(message: Message):
+    answer_list = ["Всё отлично)",
+                   "Замечательно",
+                   "норм.",
+                   "Бывало и лучше..",
+                   "Ты спрашиваешь у бота, как у него дела.\nНе думал друзей себе найти?",
+                   "Пип пип"]
+    answer_number = random.choice(answer_list)
+    await message.answer(answer_number, reply_markup=get_reply_keyboard())
+
+
+###################################ФАЙЛ BASIC.PY
+
+
+from aiogram.types import Message
+from core.keyboards.reply import get_reply_keyboard
+
+
+async def get_start(message: Message):
+    await message.answer(f"<b>И тебе привет!!</b>\n\n"
+                         f"Я умею конвертировать голос из файла формата wav в текст:)", reply_markup=get_reply_keyboard())
+
+
+async def get_exception(message: Message):
+    await message.answer(f"Оу, я даже не знаю как ответить на такое🧐")
+
+
+###################################ФАЙЛ CONVERSION.PY
+
+
+from aiogram.types import Message
+from aiogram import Bot
+from core.modules.converter import wav_to_text
+
+
+async def document_conversion(message: Message, bot: Bot):
+    if message.document.file_name[-3:] == "wav":
+        file_id = message.document.file_id
+        file = await bot.get_file(file_id)
+        file_path = file.file_path
+        await bot.download_file(file_path, f"src/{file_id}.wav")
+        await message.answer(f"Получен документ! Начинаю получать текст")
+        answer = wav_to_text(file_id)
+        await bot.send_message(message.chat.id, f"Результат:\n\n{answer}")
+    else:
+        await message.answer(f"Бот принимает только аудио формата wav")
+
+
+async def audio_conversion(message: Message, bot: Bot):
+    if message.audio.file_name[-3:] == "wav":
+        file_id = message.audio.file_id
+        file = await bot.get_file(file_id)
+        file_path = file.file_path
+        await bot.download_file(file_path, f"src/{file_id}.wav")
+        await message.answer(f"Получено аудио! Начинаю получать текст")
+        answer = wav_to_text(file_id)
+        await bot.send_message(message.chat.id, f"Результат:\n\n{answer}")
+    else:
+        await message.answer(f"Бот принимает только аудио формата wav")
+
+
+###################################ФАЙЛ RANDOM.PY
+
+
+import random
+from aiogram.types import Message
+from core.keyboards.reply import get_reply_keyboard
+
+
+async def random_number(message: Message):
+    answer_number = random.randint(-100, 100)
+    await message.answer(f"А вот и случайное число: <tg-spoiler>{answer_number}</tg-spoiler>",
+                         reply_markup=get_reply_keyboard())
+
+
+###################################ФАЙЛ START.PY
+
+
+from aiogram import Bot
+from core.settings.config import admin_id
+
+
+async def start_bot(bot: Bot):
+    try:
+        await bot.send_message(admin_id, 'Бот запущен')
+    except:
+        print("Отправить сообщение не удалось, проверьте параметр ADMIN_ID")
+
+
+async def stop_bot(bot: Bot):
+    try:
+        await bot.send_message(admin_id, 'Бот остановлен')
+    except:
+        print("Отправить сообщение не удалось, проверьте параметр ADMIN_ID")
+
+
+###################################ФАЙЛ REPLY.PY
+
+
+from aiogram.utils.keyboard import ReplyKeyboardBuilder
+
+
+def get_reply_keyboard():
+    keyboard_builder = ReplyKeyboardBuilder()
+
+    keyboard_builder.button(text='Рандомное число')
+    keyboard_builder.button(text='Как дела?')
+    keyboard_builder.adjust(3)
+    return keyboard_builder.as_markup(resize_keyboard=True, one_time_keyboard=True,
+                                      input_field_placeholder="Выбери действие:")
+
+
+###################################ФАЙЛ COVERTER.PY
+
+
+import speech_recognition as sr
+
+
+r = sr.Recognizer()
+
+
+def wav_to_text(file_id):
+    with sr.AudioFile(f"src/{file_id}.wav") as source:
+        audio_data = r.record(source)
+        text = r.recognize_google(audio_data, language="ru_RU")
+        return text
+
+
+###################################ФАЙЛ CONFIG.PY
+
+
+admin_id = 730979976
+bot_token = '1716119667:AAERJgdZJ9DjiswgW3Gw69r8nSN_IjNHEJ0'
